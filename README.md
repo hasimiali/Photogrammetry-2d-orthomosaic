@@ -7,27 +7,6 @@ This project demonstrates the process of **feature extraction** and **image stit
 - **SIFT (Scale-Invariant Feature Transform)**
 - **AKAZE (Accelerated-KAZE)**
 
-## 📂 Project Structure
-
-```bash
-.
-├── feature_extraction_orb.py
-├── feature_extraction_sift.py
-├── feature_extraction_akaze.py
-├── stitching_orb.py
-├── stitching_sift.py
-├── stitching_akaze.py
-├── input_images/
-├── output_dots_orb/
-├── output_dots_sift/
-├── output_dots_akaze/
-├── output_panorama_orb/
-├── output_panorama_sift/
-├── output_panorama_akaze/
-```
-
----
-
 ## 🧠 Feature Extraction
 
 Each algorithm detects key features (keypoints) from the input images and visualizes them using **black dots** on the image. This is useful to compare how each algorithm perceives the unique points in the image.
