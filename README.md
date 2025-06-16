@@ -53,6 +53,13 @@ We also demonstrate basic image stitching (panorama creation) using the matched 
 
 ---
 
+## 📊 Tabel Perbandingan Peak Memory
+
+| Metode                     | Peak Memory Konsumsi |
+|----------------------------|----------------------|
+| `compute_homographies()`   | 620 MB               |
+| `stitch_pair()`            | 5.2 GB               |
+
 ## 🧪 Requirements
 
 ```bash

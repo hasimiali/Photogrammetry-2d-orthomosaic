@@ -1,8 +1,6 @@
 import cv2
 import numpy as np
 import os
-import psutil
-import csv
 
 def auto_crop(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -29,30 +27,35 @@ def blend_images(base_img, overlay_img, x, y):
     base_img[y:y+h, x:x+w] = dst
     return base_img
 
-def stitch_pair(img1, img2, debug_matches=False):
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+def stitch_pair(img1_color, img2_color, debug_matches=False):
+    # Convert to grayscale for feature detection
+    img1_gray = cv2.cvtColor(img1_color, cv2.COLOR_BGR2GRAY)
+    img2_gray = cv2.cvtColor(img2_color, cv2.COLOR_BGR2GRAY)
 
     sift = cv2.SIFT_create()
-    kp1, des1 = sift.detectAndCompute(gray1, None)
-    kp2, des2 = sift.detectAndCompute(gray2, None)
+    kp1, des1 = sift.detectAndCompute(img1_gray, None)
+    kp2, des2 = sift.detectAndCompute(img2_gray, None)
 
     if des1 is None or des2 is None:
         print("Feature descriptors not found.")
-        return img1
+        return img1_color
 
     bf = cv2.BFMatcher(cv2.NORM_L2)
     matches = bf.knnMatch(des1, des2, k=2)
 
-    good = [m for m, n in matches if m.distance < 0.75 * n.distance]
+    good = []
+    for m, n in matches:
+        if m.distance < 0.75 * n.distance:
+            good.append(m)
+
     print(f"Good matches: {len(good)}")
 
     if len(good) < 10:
         print("Not enough good matches.")
-        return img1
+        return img1_color
 
     if debug_matches:
-        match_img = cv2.drawMatches(img1, kp1, img2, kp2, good, None, flags=2)
+        match_img = cv2.drawMatches(img1_color, kp1, img2_color, kp2, good, None, flags=2)
         cv2.imshow("Matches", match_img)
         cv2.waitKey(0)
         cv2.destroyWindow("Matches")
@@ -63,10 +66,10 @@ def stitch_pair(img1, img2, debug_matches=False):
     H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
     if H is None:
         print("Homography computation failed.")
-        return img1
+        return img1_color
 
-    h1, w1 = img1.shape[:2]
-    h2, w2 = img2.shape[:2]
+    h1, w1 = img1_color.shape[:2]
+    h2, w2 = img2_color.shape[:2]
 
     corners_img1 = np.float32([[0,0], [0,h1], [w1,h1], [w1,0]]).reshape(-1,1,2)
     warped_corners = cv2.perspectiveTransform(corners_img1, H)
@@ -84,13 +87,14 @@ def stitch_pair(img1, img2, debug_matches=False):
     max_dim = 32000
     if output_width > max_dim or output_height > max_dim:
         print(f"Skipping stitching due to large size: {output_width}x{output_height}")
-        return img1
+        return img1_color
 
-    result = cv2.warpPerspective(img1, trans_mat @ H, (output_width, output_height))
-    result = blend_images(result, img2, translation[0], translation[1])
+    result = cv2.warpPerspective(img1_color, trans_mat @ H, (output_width, output_height))
+    result = blend_images(result, img2_color, translation[0], translation[1])
+
     return result
 
-def stitch_images_from_folder(folder_path, debug_matches=False, log_path='sift_stitch_log.csv'):
+def stitch_images_from_folder(folder_path, debug_matches=False):
     image_files = sorted([
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)
@@ -101,42 +105,30 @@ def stitch_images_from_folder(folder_path, debug_matches=False, log_path='sift_s
         print("Need at least two images to stitch.")
         return None
 
-    images = [cv2.imread(p) for p in image_files]
-    stitched = images[0]
+    # Read and keep only the first image
+    stitched = cv2.imread(image_files[0])
+    if stitched is None:
+        print(f"Failed to read {image_files[0]}")
+        return None
 
-    # Initialize total size counter and CSV logger
-    total_pixel_size = images[0].shape[0] * images[0].shape[1]
+    for i in range(1, len(image_files)):
+        print(f"Stitching image {i+1}/{len(image_files)}: {os.path.basename(image_files[i])}")
+        img_next = cv2.imread(image_files[i])
+        if img_next is None:
+            print(f"Failed to read {image_files[i]}")
+            continue
 
-    with open(log_path, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Total Images', 'Total Dataset Image Size (pixels)', 'Memory (MB)'])
+        stitched = stitch_pair(stitched, img_next, debug_matches)
+        del img_next  # Release memory
 
-        process = psutil.Process(os.getpid())
-        mem_mb = process.memory_full_info().uss / (1024 * 1024)
-        writer.writerow([1, total_pixel_size, round(mem_mb, 2)])
-
-        for i in range(1, len(images)):
-            print(f"Stitching image {i+1}/{len(images)}: {os.path.basename(image_files[i])}")
-            stitched = stitch_pair(stitched, images[i], debug_matches)
-
-            total_pixel_size += images[i].shape[0] * images[i].shape[1]
-            process = psutil.Process(os.getpid())
-            mem_mb = process.memory_info().rss / (1024 * 1024)
-            writer.writerow([i + 1, total_pixel_size, round(mem_mb, 2)])
-
-            if i % 5 == 0:
-                stitched = auto_crop(stitched)
-                scale_percent = 50
-                width = int(stitched.shape[1] * scale_percent / 100)
-                height = int(stitched.shape[0] * scale_percent / 100)
-                stitched = cv2.resize(stitched, (width, height), interpolation=cv2.INTER_AREA)
-                print(f"Resized and cropped stitched image to: {width}x{height}")
+        if i % 5 == 0:
+            stitched = auto_crop(stitched)
 
     stitched = auto_crop(stitched)
     return stitched
 
 # === Usage ===
-folder_path = 'dataset2'  # Ganti sesuai folder
+folder_path = 'dataset2'  # Change this to your folder path
 result = stitch_images_from_folder(folder_path, debug_matches=False)
 
 if result is not None:
