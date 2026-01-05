@@ -1,0 +1,2 @@
+Step,ImageName,TotalPixels,Memory(MB),GoodMatches,InlierRatio,ReprojectionError(px),SSIM_Overlap,ProcessingTime(s)
+1,frame_20250206_072846_184100.jpg,2073600,192.16,-,-,-,-,-

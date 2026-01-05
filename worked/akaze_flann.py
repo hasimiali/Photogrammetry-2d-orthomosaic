@@ -106,7 +106,7 @@ def stitch_folder_akaze(folder):
     return pano
 
 # Usage example
-folder = "zoo_resized"  # your folder path
+folder = "dataset2"  # your folder path
 result = stitch_folder_akaze(folder)
 
 if result is not None:
