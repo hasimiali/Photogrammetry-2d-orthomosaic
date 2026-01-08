@@ -1,30 +1,35 @@
 import cv2
 import numpy as np
 import os
-import psutil
-import csv
 
 def auto_crop(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
-        c = max(contours, key=cv2.contourArea)
+        c = max(contours, key=cv2.contourArea)  # kontur terbesar
         x, y, w, h = cv2.boundingRect(c)
         return image[y:y+h, x:x+w]
     return image
 
 def blend_images(base_img, overlay_img, x, y):
+    # Membuat ROI (region of interest) di base_img
     h, w = overlay_img.shape[:2]
     roi = base_img[y:y+h, x:x+w]
 
+    # Buat mask dari overlay_img (non hitam)
     gray_overlay = cv2.cvtColor(overlay_img, cv2.COLOR_BGR2GRAY)
     _, mask = cv2.threshold(gray_overlay, 1, 255, cv2.THRESH_BINARY)
+
     mask_inv = cv2.bitwise_not(mask)
 
+    # Area base_img tanpa overlay
     base_bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
+
+    # Area overlay_img yang akan ditaruh
     overlay_fg = cv2.bitwise_and(overlay_img, overlay_img, mask=mask)
 
+    # Gabungkan
     dst = cv2.add(base_bg, overlay_fg)
     base_img[y:y+h, x:x+w] = dst
     return base_img
@@ -33,20 +38,31 @@ def stitch_pair(img1, img2, debug_matches=False):
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    sift = cv2.SIFT_create()
-    kp1, des1 = sift.detectAndCompute(gray1, None)
-    kp2, des2 = sift.detectAndCompute(gray2, None)
+    orb = cv2.ORB_create(40000)
+    kp1, des1 = orb.detectAndCompute(gray1, None)
+    kp2, des2 = orb.detectAndCompute(gray2, None)
 
     if des1 is None or des2 is None:
         print("Feature descriptors not found.")
         return img1
 
-    # === FLANN Matcher for SIFT ===
-    FLANN_INDEX_KDTREE = 1
-    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
+    # === FLANN + LSH for ORB (binary descriptor) ===
+    index_params = dict(
+        algorithm=6,          # FLANN_INDEX_LSH
+        table_number=6,
+        key_size=12,
+        multi_probe_level=1
+    )
     search_params = dict(checks=50)
 
     flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+    # FLANN membutuhkan descriptor bertipe uint8
+    if des1.dtype != np.uint8:
+        des1 = des1.astype(np.uint8)
+    if des2.dtype != np.uint8:
+        des2 = des2.astype(np.uint8)
+
     matches = flann.knnMatch(des1, des2, k=2)
 
     # Lowe's Ratio Test
@@ -108,10 +124,12 @@ def stitch_pair(img1, img2, debug_matches=False):
     result = cv2.warpPerspective(
         img1, trans_mat @ H, (output_width, output_height)
     )
+
     result = blend_images(result, img2, translation[0], translation[1])
+
     return result
 
-def stitch_images_from_folder(folder_path, debug_matches=False, log_path='sift_stitch_log.csv'):
+def stitch_images_from_folder(folder_path, debug_matches=False):
     image_files = sorted([
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)
@@ -125,43 +143,28 @@ def stitch_images_from_folder(folder_path, debug_matches=False, log_path='sift_s
     images = [cv2.imread(p) for p in image_files]
     stitched = images[0]
 
-    # Initialize total size counter and CSV logger
-    total_pixel_size = images[0].shape[0] * images[0].shape[1]
+    for i in range(1, len(images)):
+        print(f"Stitching image {i+1}/{len(images)}: {os.path.basename(image_files[i])}")
+        stitched = stitch_pair(stitched, images[i], debug_matches)
 
-    with open(log_path, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Total Images', 'Total Dataset Image Size (pixels)', 'Memory (MB)'])
-
-        process = psutil.Process(os.getpid())
-        mem_mb = process.memory_full_info().uss / (1024 * 1024)
-        writer.writerow([1, total_pixel_size, round(mem_mb, 2)])
-
-        for i in range(1, len(images)):
-            print(f"Stitching image {i+1}/{len(images)}: {os.path.basename(image_files[i])}")
-            stitched = stitch_pair(stitched, images[i], debug_matches)
-
-            total_pixel_size += images[i].shape[0] * images[i].shape[1]
-            process = psutil.Process(os.getpid())
-            mem_mb = process.memory_info().rss / (1024 * 1024)
-            writer.writerow([i + 1, total_pixel_size, round(mem_mb, 2)])
-
-            if i % 5 == 0:
-                stitched = auto_crop(stitched)
-                scale_percent = 50
-                width = int(stitched.shape[1] * scale_percent / 100)
-                height = int(stitched.shape[0] * scale_percent / 100)
-                stitched = cv2.resize(stitched, (width, height), interpolation=cv2.INTER_AREA)
-                print(f"Resized and cropped stitched image to: {width}x{height}")
+        if i % 5 == 0:
+            stitched = auto_crop(stitched)
+            scale_percent = 50
+            width = int(stitched.shape[1] * scale_percent / 100)
+            height = int(stitched.shape[0] * scale_percent / 100)
+            stitched = cv2.resize(stitched, (width, height), interpolation=cv2.INTER_AREA)
+            print(f"Resized and cropped stitched image to: {width}x{height}")
 
     stitched = auto_crop(stitched)
     return stitched
 
+
 # === Usage ===
-folder_path = 'dataset2'  # Ganti sesuai folder
+folder_path = 'dataset2'  # Ganti sesuai foldermu
 result = stitch_images_from_folder(folder_path, debug_matches=False)
 
 if result is not None:
-    cv2.imwrite('worked/stitched_sift_flann.jpg', result)
+    cv2.imwrite('worked/stitched_orb_flann.jpg', result)
     cv2.imshow('Stitched Result', result)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
