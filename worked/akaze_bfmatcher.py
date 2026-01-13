@@ -28,7 +28,7 @@ def stitch_pair_akaze(img1, img2):
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    akaze = cv2.AKAZE_create()
+    akaze = cv2.AKAZE_create(max_points=100000)
     kp1, des1 = akaze.detectAndCompute(gray1, None)
     kp2, des2 = akaze.detectAndCompute(gray2, None)
 
@@ -119,7 +119,7 @@ folder = "dataset2"  # your folder path
 result = stitch_folder_akaze(folder)
 
 if result is not None:
-    cv2.imwrite("worked/stitched_akaze_bfmatcher.jpg", result)
+    cv2.imwrite("worked/AKAZE_BFMatcher/max.jpg", result)
     cv2.imshow("AKAZE Stitching Result", result)
     cv2.waitKey(0)
     cv2.destroyAllWindows()

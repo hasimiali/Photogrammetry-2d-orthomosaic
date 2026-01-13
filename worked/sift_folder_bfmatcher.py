@@ -33,7 +33,7 @@ def stitch_pair(img1, img2, debug_matches=False):
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    sift = cv2.SIFT_create()
+    sift = cv2.SIFT_create(100000)
     kp1, des1 = sift.detectAndCompute(gray1, None)
     kp2, des2 = sift.detectAndCompute(gray2, None)
 
@@ -41,13 +41,9 @@ def stitch_pair(img1, img2, debug_matches=False):
         print("Feature descriptors not found.")
         return img1
 
-    # === FLANN Matcher for SIFT ===
-    FLANN_INDEX_KDTREE = 1
-    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-    search_params = dict(checks=50)
-
-    flann = cv2.FlannBasedMatcher(index_params, search_params)
-    matches = flann.knnMatch(des1, des2, k=2)
+    # === BFMatcher for SIFT ===
+    bf = cv2.BFMatcher(cv2.NORM_L2)
+    matches = bf.knnMatch(des1, des2, k=2)
 
     # Lowe's Ratio Test
     good = []
@@ -71,10 +67,13 @@ def stitch_pair(img1, img2, debug_matches=False):
     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1,1,2)
 
     # Homography (DLT + RANSAC)
-    H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+    H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
     if H is None:
         print("Homography computation failed.")
         return img1
+
+    inliers = int(mask.sum())
+    print(f"Inliers: {inliers} / {len(good)}")
 
     h1, w1 = img1.shape[:2]
     h2, w2 = img2.shape[:2]
@@ -161,7 +160,7 @@ folder_path = 'dataset2'  # Ganti sesuai folder
 result = stitch_images_from_folder(folder_path, debug_matches=False)
 
 if result is not None:
-    cv2.imwrite('worked/stitched_sift_flann.jpg', result)
+    cv2.imwrite('worked/SIFT_BFMatcher/max.jpg', result)
     cv2.imshow('Stitched Result', result)
     cv2.waitKey(0)
     cv2.destroyAllWindows()

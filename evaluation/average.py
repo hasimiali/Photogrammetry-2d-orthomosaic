@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Baca file CSV
-df = pd.read_csv("evaluation/sift/100000_sift_evaluation.csv")
+df = pd.read_csv("evaluation/akaze/akaze_FLANN_evaluation.csv")
 
 # Hitung rata-rata untuk semua kolom numerik
 mean_values = df.mean(numeric_only=True)

@@ -38,7 +38,7 @@ def stitch_pair(img1, img2, debug_matches=False):
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    orb = cv2.ORB_create(40000)
+    orb = cv2.ORB_create(8000)
     kp1, des1 = orb.detectAndCompute(gray1, None)
     kp2, des2 = orb.detectAndCompute(gray2, None)
 
@@ -164,7 +164,7 @@ folder_path = 'dataset2'  # Ganti sesuai foldermu
 result = stitch_images_from_folder(folder_path, debug_matches=False)
 
 if result is not None:
-    cv2.imwrite('worked/stitched_orb_flann.jpg', result)
+    cv2.imwrite('worked/ORB_FLANN/8000.jpg', result)
     cv2.imshow('Stitched Result', result)
     cv2.waitKey(0)
     cv2.destroyAllWindows()

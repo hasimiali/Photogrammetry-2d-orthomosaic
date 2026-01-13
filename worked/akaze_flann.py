@@ -28,7 +28,7 @@ def stitch_pair_akaze(img1, img2):
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    akaze = cv2.AKAZE_create()
+    akaze = cv2.AKAZE_create(max_points=100000)
     kp1, des1 = akaze.detectAndCompute(gray1, None)
     kp2, des2 = akaze.detectAndCompute(gray2, None)
 
